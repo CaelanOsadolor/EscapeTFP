@@ -6,6 +6,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local workspace = game:GetService("Workspace")
 local ServerScriptService = game:GetService("ServerScriptService")
 
+-- Event system
+local EventManager = require(ServerScriptService.GameManager.EventManager)
+local adminCountdownTask = nil -- Track countdown task for cancellation
+
 -- All things in the game organized by rarity (Game 3)
 local ALL_THINGS = {
 	Common = {"Black", "Blue", "Green", "Pink", "Red", "Yellow"},
@@ -72,15 +76,111 @@ end
 -- Chat command handler
 Players.PlayerAdded:Connect(function(player)
 	player.Chatted:Connect(function(message)
-		-- Only allow UnempIoymen to use admin commands
-		if player.Name ~= "UnempIoymen" then
+		-- Only allow specific user to use admin commands (more secure than username)
+		if player.UserId ~= 8921430843 then
 			return
 		end
 		
 		local lowerMsg = message:lower()
 		
+		-- Start event (GLOBAL - affects all servers): /startevent night OR /startevent love
+		if lowerMsg:match("^/startevent%s+") then
+			local eventType = lowerMsg:match("/startevent%s+(%w+)")
+			if eventType == "night" or eventType == "love" then
+				local eventName = eventType:sub(1,1):upper() .. eventType:sub(2) -- Capitalize
+				-- Publish global event (affects ALL servers)
+				EventManager.PublishGlobalStartEvent(eventName)
+				print(player.Name, "started GLOBAL", eventName, "event (all servers affected)")
+			else
+				warn("Invalid event type. Use: /startevent night OR /startevent love")
+			end
+		
+		-- Start event LOCAL (Studio testing): /startevent_local night OR /startevent_local love
+		elseif lowerMsg:match("^/startevent_local%s+") then
+			local eventType = lowerMsg:match("/startevent_local%s+(%w+)")
+			if eventType == "night" or eventType == "love" then
+				local eventName = eventType:sub(1,1):upper() .. eventType:sub(2)
+				
+				-- Cancel any existing countdown
+				if adminCountdownTask then
+					task.cancel(adminCountdownTask)
+				end
+				
+				-- Start event manually
+				EventManager.StartEvent(eventName)
+				print(player.Name, "started LOCAL", eventName, "event")
+				
+				-- Fire timer updates for 5 minutes (300 seconds)
+				local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+				local eventTimerBindable = remoteEventsFolder and remoteEventsFolder:FindFirstChild("EventTimerUpdate")
+				
+				if eventTimerBindable then
+					adminCountdownTask = task.spawn(function()
+						-- Countdown from 300 to 0
+						for timeRemaining = 300, 0, -1 do
+							eventTimerBindable:Fire(eventName, timeRemaining)
+							if timeRemaining > 0 then
+								task.wait(1)
+							end
+						end
+						-- Auto-end after 5 minutes
+						EventManager.EndEvent()
+						print(eventName, "event ended (5 min timer)")
+						
+						-- Start 30-minute countdown to next event
+						for timeRemaining = 1800, 0, -1 do
+							eventTimerBindable:Fire(nil, timeRemaining)
+							if timeRemaining > 0 then
+								task.wait(1)
+							end
+						end
+					end)
+				end
+			else
+				warn("Invalid event type. Use: /startevent_local night OR /startevent_local love")
+			end
+		
+		-- End event LOCAL (Studio testing)
+		elseif lowerMsg == "/endevent_local" then
+			-- Cancel countdown if running
+			if adminCountdownTask then
+				task.cancel(adminCountdownTask)
+			end
+			
+			EventManager.EndEvent()
+			print(player.Name, "ended LOCAL event")
+			
+			-- Start 30-minute countdown
+			local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+			local eventTimerBindable = remoteEventsFolder and remoteEventsFolder:FindFirstChild("EventTimerUpdate")
+			
+			if eventTimerBindable then
+				adminCountdownTask = task.spawn(function()
+					for timeRemaining = 1800, 0, -1 do
+						eventTimerBindable:Fire(nil, timeRemaining)
+						if timeRemaining > 0 then
+							task.wait(1)
+						end
+					end
+				end)
+			end
+		
+		-- End event (GLOBAL - affects all servers)
+		elseif lowerMsg == "/endevent" then
+			EventManager.PublishGlobalEndEvent()
+			print(player.Name, "ended GLOBAL event (all servers affected)")
+		
+		-- Check current event
+		elseif lowerMsg == "/checkevent" then
+			local activeEvent = EventManager.GetActiveEvent()
+			if activeEvent then
+				print("Current event:", activeEvent)
+			else
+				print("No event active")
+			end
+		
 		-- Reset speed to 18
-		if lowerMsg == "/resetspeed" then
+		elseif lowerMsg == "/resetspeed" then
 			player:SetAttribute("Speed", 18)
 			local character = player.Character
 			if character then
@@ -347,8 +447,8 @@ Players.PlayerAdded:Connect(function(player)
 				targetPlayer = player
 			end
 			
-			-- Check if last arg is a mutation (Gold, Diamond, Emerald)
-			local knownMutations = {"gold", "diamond", "emerald"}
+			-- Check if last arg is a mutation (Gold, Diamond, Emerald, Night, Love)
+			local knownMutations = {"gold", "diamond", "emerald", "night", "love"}
 			if #args > 0 then
 				local lastArg = args[#args]:lower()
 				for _, mut in ipairs(knownMutations) do
@@ -378,12 +478,30 @@ Players.PlayerAdded:Connect(function(player)
 			
 			if foundRarity then
 				local ThingInventoryManager = require(ServerScriptService.Things.ThingInventoryManager)
+				local ThingValueManager = require(ServerScriptService.Things.ThingValueManager)
+				
+				-- Calculate rate with mutation multiplier
+				local baseRate = ThingValueManager.GetThingValueByName(thingName, foundRarity)
+				local mutationMultiplier = 1
+				if mutation:lower() == "gold" then
+					mutationMultiplier = 1.5
+				elseif mutation:lower() == "diamond" then
+					mutationMultiplier = 2
+				elseif mutation:lower() == "emerald" then
+					mutationMultiplier = 3
+				elseif mutation:lower() == "night" then
+					mutationMultiplier = 2
+				elseif mutation:lower() == "love" then
+					mutationMultiplier = 3
+				end
+				local finalRate = baseRate * mutationMultiplier
+				
 				local success, msg = ThingInventoryManager.AddToInventory(
 					targetPlayer,
 					thingName,
 					mutation, -- Use specified mutation or empty string
 					foundRarity,
-					nil, -- rate will be calculated
+					finalRate, -- rate with mutation applied
 					{}, -- empty guiData
 					0 -- level 0
 				)
@@ -411,20 +529,29 @@ giveStuff("UnempIoymen", 99000000000000, 99, 1) -- 99T money, 99 speed, 1 rebirt
 
 print("Admin command system (Game 3) loaded!")
 print("Commands:")
-print("  /resetspeed - Reset speed to 18")
-print("  /resetcarry - Reset carry to 1")
-print("  /setcarry [1-10] - Set carry capacity")
-print("  /setspeed [18-2000] - Set speed")
-print("  /givemoney [amount] - Give money")
-print("  /giverebirths [0-10] - Set rebirth count")
-print("  /wipefloor - Reset base upgrade level to 0")
-print("  /setfloor [0-20] - Set base upgrade level")
-print("  /resetall - Reset everything to defaults")
-print("  /giveallthings - Give yourself all items in the game")
-print("  /giveallgold - Give all items with gold mutation")
-print("  /giveallcelestials - Give all celestial items (Angel, Frostbite, HeartBreaker, Space)")
-print("  /spawncelestial - Spawn a random celestial item instantly")
-print("  /givething [thingName] - Give yourself a specific thing (e.g., /givething Love Knight)")
-print("  /givething [thingName] [mutation] - Give yourself a thing with mutation (e.g., /givething King Gold)")
-print("  /givething [playerName] [thingName] - Give a specific thing to another player")
-print("  /givething [playerName] [thingName] [mutation] - Give with mutation (Gold, Diamond, Emerald)")
+print("  EVENT SYSTEM:")
+print("    /startevent [night/love] - Start event on ALL servers (MessagingService)")
+print("    /endevent - End event on ALL servers")
+print("    /startevent_local [night/love] - Start event locally (Studio testing)")
+print("    /endevent_local - End event locally")
+print("    /checkevent - Check current active event")
+print("  PLAYER STATS:")
+print("    /resetspeed - Reset speed to 18")
+print("    /resetcarry - Reset carry to 1")
+print("    /setcarry [1-10] - Set carry capacity")
+print("    /setspeed [18-2000] - Set speed")
+print("    /givemoney [amount] - Give money")
+print("    /giverebirths [0-10] - Set rebirth count")
+print("  BASE MANAGEMENT:")
+print("    /wipefloor - Reset base upgrade level to 0")
+print("    /setfloor [0-20] - Set base upgrade level")
+print("    /resetall - Reset everything to defaults")
+print("  ITEM COMMANDS:")
+print("    /giveallthings - Give yourself all items in the game")
+print("    /giveallgold - Give all items with gold mutation")
+print("    /giveallcelestials - Give all celestial items (Angel, Frostbite, HeartBreaker, Space)")
+print("    /spawncelestial - Spawn a random celestial item instantly")
+print("    /givething [thingName] - Give yourself a specific thing (e.g., /givething Love Knight)")
+print("    /givething [thingName] [mutation] - Give with mutation (e.g., /givething King Gold)")
+print("    /givething [playerName] [thingName] - Give a specific thing to another player")
+print("    /givething [playerName] [thingName] [mutation] - Mutations: Gold, Diamond, Emerald, Night, Love")

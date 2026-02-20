@@ -11,9 +11,16 @@ if not mainSign then
 	return
 end
 
--- Find the Timer TextLabel in descendants
+-- Find the Celestial part (not Event)
+local celestialPart = mainSign:FindFirstChild("Celestial")
+if not celestialPart then
+	warn("[CelestialTimer] Celestial part not found in MainSign!")
+	return
+end
+
+-- Find the Timer TextLabel in Celestial part's descendants
 local timerLabel = nil
-for _, descendant in ipairs(mainSign:GetDescendants()) do
+for _, descendant in ipairs(celestialPart:GetDescendants()) do
 	if descendant:IsA("TextLabel") and descendant.Name == "Timer" then
 		timerLabel = descendant
 		print("[CelestialTimer] Found Timer label at:", descendant:GetFullName())
@@ -22,47 +29,21 @@ for _, descendant in ipairs(mainSign:GetDescendants()) do
 end
 
 if not timerLabel then
-	warn("[CelestialTimer] Timer TextLabel not found in MainSign!")
-	warn("[CelestialTimer] Searched in:", mainSign:GetFullName())
+	warn("[CelestialTimer] Timer TextLabel not found in Celestial part!")
 	return
 end
 
--- Wait for RemoteEvent
+-- Wait for RemoteEvents folder
 local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents", 10)
 if not remoteEventsFolder then
 	warn("[CelestialTimer] RemoteEvents folder not found!")
 	return
 end
 
--- Create or find CelestialTimer RemoteEvent
-local celestialTimerEvent = remoteEventsFolder:FindFirstChild("CelestialTimer")
-if not celestialTimerEvent then
-	celestialTimerEvent = Instance.new("RemoteEvent")
-	celestialTimerEvent.Name = "CelestialTimer"
-	celestialTimerEvent.Parent = remoteEventsFolder
-	print("[CelestialTimer] Created CelestialTimer RemoteEvent")
-end
-
--- Listen for timer updates from server
-celestialTimerEvent.OnServerEvent:Connect(function(player, timeRemaining)
-	-- This is actually for client->server, we need a different approach
-end)
-
--- Since this is a server script and we want server-to-server communication,
--- we'll use a BindableEvent instead
-local bindableEventsFolder = ReplicatedStorage:FindFirstChild("BindableEvents")
-if not bindableEventsFolder then
-	bindableEventsFolder = Instance.new("Folder")
-	bindableEventsFolder.Name = "BindableEvents"
-	bindableEventsFolder.Parent = ReplicatedStorage
-end
-
-local celestialTimerBindable = bindableEventsFolder:FindFirstChild("CelestialTimerUpdate")
+local celestialTimerBindable = remoteEventsFolder:FindFirstChild("CelestialTimerUpdate")
 if not celestialTimerBindable then
-	celestialTimerBindable = Instance.new("BindableEvent")
-	celestialTimerBindable.Name = "CelestialTimerUpdate"
-	celestialTimerBindable.Parent = bindableEventsFolder
-	print("[CelestialTimer] Created CelestialTimerUpdate BindableEvent")
+	warn("[CelestialTimer] CelestialTimerUpdate BindableEvent not found!")
+	return
 end
 
 -- Listen for timer updates

@@ -67,10 +67,23 @@ local function openShopToBoosts()
 	
 	-- Wait for shop to open, then scroll to 2x Temp section
 	openTween.Completed:Connect(function()
-		task.wait(0.1) -- Small delay to ensure layout has updated
+		task.wait(0.3) -- Longer delay to ensure UI is fully loaded
 		
 		-- Find the 2x Temp frame in the scrolling frame
 		local tempFrame = scrollingFrame:FindFirstChild("2x Temp")
+		
+		-- Debug output
+		if not tempFrame then
+			print("[OpenShopToBoosts] Searching for '2x Temp' frame...")
+			print("[OpenShopToBoosts] Children in ScrollingFrame:")
+			for _, child in ipairs(scrollingFrame:GetChildren()) do
+				print("  - " .. child.Name .. " (" .. child.ClassName .. ")")
+				if child.Name == "2x Temp" then
+					tempFrame = child
+					print("  ^ FOUND IT!")
+				end
+			end
+		end
 		
 		if tempFrame then
 			-- Calculate Y position of the frame within the canvas

@@ -268,9 +268,12 @@ function ThingValueManager.GetThingValue(thing)
 	local classLabel = frame:FindFirstChild("Class")
 	local rarity = classLabel and classLabel.Text or "Common"
 
-	-- Get mutation multiplier
-	local mutationLabel = frame:FindFirstChild("Mutation")
-	local mutation = mutationLabel and mutationLabel.Text or "None"
+	-- Get mutation from attribute first (more reliable), then fallback to GUI
+	local mutation = thing:GetAttribute("Mutation") or "None"
+	if mutation == "None" then
+		local mutationLabel = frame:FindFirstChild("Mutation")
+		mutation = mutationLabel and mutationLabel.Text or "None"
+	end
 
 	-- Get base value for this thing
 	local baseValue = THING_VALUES[thingName]
@@ -287,6 +290,10 @@ function ThingValueManager.GetThingValue(thing)
 	elseif mutation == "Diamond" then
 		mutationMultiplier = 2
 	elseif mutation == "Emerald" then
+		mutationMultiplier = 3
+	elseif mutation == "Night" then
+		mutationMultiplier = 2
+	elseif mutation == "Love" then
 		mutationMultiplier = 3
 	end
 

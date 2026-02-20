@@ -6,6 +6,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local workspace = game:GetService("Workspace")
 local ServerScriptService = game:GetService("ServerScriptService")
 
+-- Load EventManager for event control commands
+local EventManager = require(ServerScriptService.GameManager.EventManager)
+
+-- Track admin countdown task so we can cancel it
+local adminCountdownTask = nil
+
 -- All things in the game organized by rarity
 local ALL_THINGS = {
 	Common = {"iPhone 2G", "iPhone 6", "iPhone SE", "Nokia", "Samsung S6"},
@@ -72,8 +78,9 @@ end
 -- Chat command handler
 Players.PlayerAdded:Connect(function(player)
 	player.Chatted:Connect(function(message)
-		-- Only allow UnempIoymen to use admin commands
-		if player.Name ~= "UnempIoymen" then
+		-- Only allow specific user to use admin commands (more secure than username)
+		-- Replace XXXXXXXXX with your actual Roblox UserId
+		if player.UserId ~= 8921430843 then -- CHANGE THIS TO YOUR USERID!
 			return
 		end
 		
@@ -251,6 +258,81 @@ Players.PlayerAdded:Connect(function(player)
 			
 			print(player.Name, "received", count, "gold things!")
 			
+		-- Give specific thing with mutation: /givething [name] [mutation]
+		-- Example: /givething iPhone 17 Pro Max gold
+		-- Mutations: none, gold, diamond, emerald, night, love
+		elseif lowerMsg:match("^/givething%s+.+") then
+			local args = message:sub(12) -- Remove "/givething "
+			local mutation = ""
+			local thingName = args
+			
+			-- Check if mutation is specified (last word)
+			local mutations = {"gold", "diamond", "emerald", "night", "love", "none"}
+			for _, mut in ipairs(mutations) do
+				if args:lower():match("%s" .. mut .. "$") then
+					mutation = mut == "none" and "" or (mut:sub(1,1):upper() .. mut:sub(2):lower())
+					thingName = args:sub(1, -(#mut + 2)) -- Remove mutation from name
+					break
+				end
+			end
+			
+			-- Find the rarity of this thing
+			local foundRarity = nil
+			for rarity, things in pairs(ALL_THINGS) do
+				for _, name in ipairs(things) do
+					if name:lower() == thingName:lower() then
+						foundRarity = rarity
+						thingName = name -- Use correct capitalization
+						break
+					end
+				end
+				if foundRarity then break end
+			end
+			
+			if foundRarity then
+				local ThingInventoryManager = require(ServerScriptService.Things.ThingInventoryManager)
+				local ThingValueManager = require(ServerScriptService.Things.ThingValueManager)
+				
+				-- Calculate rate with mutation applied
+				local baseRate = ThingValueManager.GetThingValueByName(thingName, foundRarity)
+				
+				-- Apply mutation multiplier
+				local mutationMultiplier = 1
+				if mutation == "Gold" then
+					mutationMultiplier = 1.5
+				elseif mutation == "Diamond" then
+					mutationMultiplier = 2
+				elseif mutation == "Emerald" then
+					mutationMultiplier = 3
+				elseif mutation == "Night" then
+					mutationMultiplier = 2
+				elseif mutation == "Love" then
+					mutationMultiplier = 3
+				end
+				
+				local rate = baseRate * mutationMultiplier
+				
+				local success, msg = ThingInventoryManager.AddToInventory(
+					player,
+					thingName,
+					mutation,
+					foundRarity,
+					rate, -- Now passing the correct rate with mutation applied
+					{},
+					0
+				)
+				
+				if success then
+					local mutText = mutation ~= "" and (" with " .. mutation .. " mutation") or ""
+					print(player.Name, "received", thingName, mutText, "- Rate:", rate, "/sec")
+				else
+					warn("Failed to add", thingName, ":", msg)
+				end
+			else
+				warn("Thing not found:", thingName)
+				print("Use exact name like: /givething iPhone 17 Pro Max gold")
+			end
+			
 		-- Spawn a celestial phone: /spawncelestial
 		elseif lowerMsg == "/spawncelestial" then
 			-- Pick a random celestial phone
@@ -284,6 +366,190 @@ Players.PlayerAdded:Connect(function(player)
 			else
 				warn("No celestial things found!")
 			end
+			
+		-- Start an event manually: /startevent night OR /startevent love (GLOBAL - ALL SERVERS)
+		elseif lowerMsg:match("^/startevent%s+%w+$") then
+			local eventType = lowerMsg:match("%s(%w+)$")
+			eventType = eventType:sub(1,1):upper() .. eventType:sub(2):lower() -- Capitalize first letter
+			
+			if eventType == "Night" or eventType == "Love" then
+				-- Cancel any existing admin countdown
+				if adminCountdownTask then
+					task.cancel(adminCountdownTask)
+					adminCountdownTask = nil
+				end
+				
+				-- Publish to ALL servers globally
+				local success = EventManager.PublishGlobalStartEvent(eventType)
+				
+				if success then
+					print(player.Name, "started", eventType, "Event GLOBALLY across all servers")
+					
+					-- Send notification
+					local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+					local notificationEvent = remoteEventsFolder and remoteEventsFolder:FindFirstChild("Notification")
+					if notificationEvent then
+						notificationEvent:FireClient(player, "⚡ Started " .. eventType .. " Event GLOBALLY!", nil, Color3.fromRGB(255, 215, 0), 5)
+					end
+				else
+					warn("Failed to publish global event command")
+				end
+			else
+				warn("Invalid event type. Use: night or love")
+			end
+			
+		-- Start an event locally (STUDIO TESTING - Current server only)
+		elseif lowerMsg:match("^/startevent_local%s+%w+$") then
+			local eventType = lowerMsg:match("%s(%w+)$")
+			eventType = eventType:sub(1,1):upper() .. eventType:sub(2):lower()
+			
+			if eventType == "Night" or eventType == "Love" then
+				-- Cancel any existing admin countdown
+				if adminCountdownTask then
+					task.cancel(adminCountdownTask)
+					adminCountdownTask = nil
+				end
+				
+				-- End current event if one is active
+				if EventManager.IsAnyEventActive() then
+					EventManager.EndEvent()
+					task.wait(0.5)
+				end
+				
+				-- Pause automatic timer updates
+				EventManager.PauseTimerUpdates()
+				
+				-- Start the event locally
+				EventManager.StartEvent(eventType)
+				print(player.Name, "started", eventType, "Event LOCALLY (this server only)")
+				
+				-- Send notification
+				local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+				local notificationEvent = remoteEventsFolder and remoteEventsFolder:FindFirstChild("Notification")
+				if notificationEvent then
+					notificationEvent:FireClient(player, "⚡ Started " .. eventType .. " Event (Local)", nil, Color3.fromRGB(255, 165, 0), 3)
+				end
+				
+				-- Start countdown loop (5 minutes)
+				local eventTimerBindable = remoteEventsFolder and remoteEventsFolder:FindFirstChild("EventTimerUpdate")
+				if eventTimerBindable then
+					adminCountdownTask = task.spawn(function()
+						for timeRemaining = 300, 0, -1 do
+							eventTimerBindable:Fire(eventType, timeRemaining)
+							if timeRemaining > 0 then
+								task.wait(1)
+							end
+						end
+						-- Event finished, end it
+						EventManager.EndEvent()
+						
+						-- Start 30-minute countdown
+						for timeRemaining = 1800, 0, -1 do
+							eventTimerBindable:Fire(nil, timeRemaining)
+							if timeRemaining > 0 then
+								task.wait(1)
+							end
+						end
+						
+						-- Resume automatic cycle
+						EventManager.ResumeTimerUpdates()
+						adminCountdownTask = nil
+					end)
+				end
+			else
+				warn("Invalid event type. Use: night or love")
+			end
+			
+		-- End event locally (STUDIO TESTING - Current server only)
+		elseif lowerMsg == "/endevent_local" then
+			-- Cancel any admin countdown task
+			if adminCountdownTask then
+				task.cancel(adminCountdownTask)
+				adminCountdownTask = nil
+			end
+			
+			if EventManager.IsAnyEventActive() then
+				local currentEvent = EventManager.GetActiveEvent()
+				EventManager.EndEvent()
+				print(player.Name, "ended", currentEvent.Type, "Event LOCALLY")
+				
+				-- Send notification
+				local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+				local notificationEvent = remoteEventsFolder and remoteEventsFolder:FindFirstChild("Notification")
+				if notificationEvent then
+					notificationEvent:FireClient(player, "⚡ Ended event (Local)", nil, Color3.fromRGB(255, 165, 0), 3)
+				end
+				
+				-- Start 30-minute countdown
+				local eventTimerBindable = remoteEventsFolder and remoteEventsFolder:FindFirstChild("EventTimerUpdate")
+				if eventTimerBindable then
+					adminCountdownTask = task.spawn(function()
+						for timeRemaining = 1800, 0, -1 do
+							eventTimerBindable:Fire(nil, timeRemaining)
+							if timeRemaining > 0 then
+								task.wait(1)
+							end
+						end
+						
+						-- Resume automatic cycle
+						EventManager.ResumeTimerUpdates()
+						adminCountdownTask = nil
+					end)
+				end
+			else
+				print(player.Name, "tried to end event but no event is active")
+			end
+			
+		-- End current event: /endevent (GLOBAL - ALL SERVERS)
+		elseif lowerMsg == "/endevent" then
+			-- Cancel any admin countdown task
+			if adminCountdownTask then
+				task.cancel(adminCountdownTask)
+				adminCountdownTask = nil
+			end
+			
+			if EventManager.IsAnyEventActive() then
+				-- Publish to ALL servers globally
+				local success = EventManager.PublishGlobalEndEvent()
+				
+				if success then
+					print(player.Name, "ended event GLOBALLY across all servers")
+					
+					-- Send notification
+					local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+					local notificationEvent = remoteEventsFolder and remoteEventsFolder:FindFirstChild("Notification")
+					if notificationEvent then
+						notificationEvent:FireClient(player, "⚡ Ended event GLOBALLY!", nil, Color3.fromRGB(255, 215, 0), 5)
+					end
+				else
+					warn("Failed to publish global end event")
+				end
+			else
+				print(player.Name, "tried to end event but no event is active")
+			end
+			
+		-- Check what event is active: /checkevent
+		elseif lowerMsg == "/checkevent" then
+			if EventManager.IsAnyEventActive() then
+				local currentEvent = EventManager.GetActiveEvent()
+				print("Current event:", currentEvent.Type, "| Started at:", currentEvent.StartTime)
+				
+				-- Send notification (Text, Polarity, CustomColor, CustomDuration)
+				local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+				local notificationEvent = remoteEventsFolder and remoteEventsFolder:FindFirstChild("Notification")
+				if notificationEvent then
+					notificationEvent:FireClient(player, "Current Event: " .. currentEvent.Type, nil, Color3.fromRGB(255, 255, 0), 3)
+				end
+			else
+				print("No event currently active")
+				
+				-- Send notification (Text, Polarity, CustomColor, CustomDuration)
+				local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+				local notificationEvent = remoteEventsFolder and remoteEventsFolder:FindFirstChild("Notification")
+				if notificationEvent then
+					notificationEvent:FireClient(player, "No event currently active", nil, Color3.fromRGB(255, 255, 0), 3)
+				end
+			end
 		end
 	end)
 end)
@@ -305,4 +571,10 @@ print("  /setfloor [0-20] - Set base upgrade level")
 print("  /resetall - Reset everything to defaults")
 print("  /giveallthings - Give yourself all phones in the game")
 print("  /giveallgold - Give all phones with gold mutation")
+print("  /givething [name] [mutation] - Give specific thing (e.g., /givething iPhone 17 Pro Max love)")
 print("  /spawncelestial - Spawn a random celestial phone instantly")
+print("  /startevent [night/love] - Start a specific event GLOBALLY (all servers)")
+print("  /endevent - End the current event GLOBALLY (all servers)")
+print("  /startevent_local [night/love] - Start event on THIS server only (for Studio testing)")
+print("  /endevent_local - End event on THIS server only (for Studio testing)")
+print("  /checkevent - Check what event is currently active")

@@ -15,6 +15,7 @@ local GamepassManager = require(script.Parent.GamepassManager)
 local GroupRewardManager = require(script.Parent.GroupRewardManager)
 local BoostManager = require(script.Parent.BoostManager)
 local WheelManager = require(script.Parent.WheelManager)
+local EventManager = require(script.Parent.EventManager)
 
 -- Require Thing System
 local ThingSystemHandler = require(ServerScriptService.Things.ThingSystemHandler)
@@ -184,5 +185,8 @@ GroupRewardManager.Init()
 
 -- Initialize Boost Manager (10-minute speed/money boosts)
 BoostManager.Initialize()
+
+-- Initialize Event Manager (Night/Love events)
+EventManager.Init()
 
 print("Player Setup system initialized!")

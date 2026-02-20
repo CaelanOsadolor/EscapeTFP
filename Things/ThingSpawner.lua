@@ -232,28 +232,28 @@ end
 function ThingSpawner.SpawnLoopForRarity(rarity, config)
 	-- Special handling for Celestial with timer updates
 	if rarity == "Celestial" then
-		-- Get or create BindableEvent for timer updates
-		local bindableEventsFolder = ReplicatedStorage:FindFirstChild("BindableEvents")
-		if not bindableEventsFolder then
-			bindableEventsFolder = Instance.new("Folder")
-			bindableEventsFolder.Name = "BindableEvents"
-			bindableEventsFolder.Parent = ReplicatedStorage
+		-- Get or create CelestialTimerUpdate in RemoteEvents folder
+		local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+		if not remoteEventsFolder then
+			remoteEventsFolder = Instance.new("Folder")
+			remoteEventsFolder.Name = "RemoteEvents"
+			remoteEventsFolder.Parent = ReplicatedStorage
 		end
-		
-		local celestialTimerBindable = bindableEventsFolder:FindFirstChild("CelestialTimerUpdate")
+
+		local celestialTimerBindable = remoteEventsFolder:FindFirstChild("CelestialTimerUpdate")
 		if not celestialTimerBindable then
 			celestialTimerBindable = Instance.new("BindableEvent")
 			celestialTimerBindable.Name = "CelestialTimerUpdate"
-			celestialTimerBindable.Parent = bindableEventsFolder
+			celestialTimerBindable.Parent = remoteEventsFolder
 		end
-		
+
 		-- Main loop - timer is the source of truth
 		while true do
 			-- Countdown from spawn interval to 0
 			for timeRemaining = config.SpawnInterval, 0, -1 do
 				-- Fire timer update
 				celestialTimerBindable:Fire(timeRemaining)
-				
+
 				-- Wait 1 second (except on last iteration when timeRemaining is 0)
 				if timeRemaining > 0 then
 					task.wait(1)
@@ -267,21 +267,21 @@ function ThingSpawner.SpawnLoopForRarity(rarity, config)
 				local thingName = ThingSpawner.PickRandomThingFromRarity(rarity)
 				if thingName then
 					ThingSpawner.SpawnSpecificThing(thingName, rarity)
-					
+
 					-- Send pink notification to ALL players (5 seconds duration with sound)
 					local Players = game:GetService("Players")
 					local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
 					local notificationEvent = remoteEventsFolder and remoteEventsFolder:FindFirstChild("Notification")
 					local playSoundEvent = remoteEventsFolder and remoteEventsFolder:FindFirstChild("PlaySoundEvent")
-					
+
 					if notificationEvent then
 						for _, player in Players:GetPlayers() do
 							-- Args: Text, Polarity, CustomColor, CustomDuration
 							notificationEvent:FireClient(player, "🌟 A Celestial " .. thingName .. " has spawned!", nil, Color3.fromRGB(255, 170, 255), 5)
-							
-							-- Play sound separately for each player
-							if playSoundEvent then
-								playSoundEvent:FireClient(player, "ClaimSound", 0.7, 1, nil)
+
+						-- Play sound separately for each player (volume, playbackSpeed, parent)
+						if playSoundEvent then
+							playSoundEvent:FireClient(player, "ClaimSound", 0.7, 1, nil)
 							end
 						end
 					end
@@ -476,11 +476,11 @@ function ThingSpawner.SpawnSpecificThing(thingName, rarity)
 				local nameLabel = frame:FindFirstChild("Name")
 				if nameLabel and nameLabel:IsA("TextLabel") then
 					nameLabel.Text = template.Name
-					
+
 					-- Special styling for Valentine Pro Max name label
 					if template.Name == "Valentine Pro Max" then
 						nameLabel.TextColor3 = Color3.fromRGB(0, 0, 0) -- Black text
-						
+
 						-- Add white UIStroke
 						local nameStroke = nameLabel:FindFirstChildOfClass("UIStroke")
 						if not nameStroke then
@@ -489,7 +489,7 @@ function ThingSpawner.SpawnSpecificThing(thingName, rarity)
 						end
 						nameStroke.Color = Color3.fromRGB(255, 255, 255)
 						nameStroke.Thickness = 1
-						
+
 						-- Add pink gradient
 						local nameGradient = nameLabel:FindFirstChildOfClass("UIGradient")
 						if not nameGradient then
@@ -536,21 +536,36 @@ function ThingSpawner.SpawnSpecificThing(thingName, rarity)
 				end
 
 				-- Randomly assign mutation (5% gold, 2% diamond, 0.5% emerald)
-				local mutationLabel = frame:FindFirstChild("Mutation")
-				local mutationType = ""
-				if mutationLabel and mutationLabel:IsA("TextLabel") then
-					local rand = math.random()
-					if rand < 0.005 then
-						mutationType = "Emerald"
-						mutationLabel.Text = "Emerald"
-					elseif rand < 0.025 then
-						mutationType = "Diamond"
-						mutationLabel.Text = "Diamond"
-					elseif rand < 0.075 then
-						mutationType = "Gold"
-						mutationLabel.Text = "Gold"
+			-- Event mutations (Night/Love) have separate 5% chance during events
+			local mutationLabel = frame:FindFirstChild("Mutation")
+			local mutationType = ""
+			if mutationLabel and mutationLabel:IsA("TextLabel") then
+				-- Check if there's an active event
+				local eventMutation = nil
+				local EventManager = require(script.Parent.Parent.GameManager.EventManager)
+				if EventManager and EventManager.IsAnyEventActive() then
+					eventMutation = EventManager.GetEventMutation()
+				end
+				
+				-- First check for event mutation (5% chance if event is active)
+				if eventMutation and math.random() < 0.05 then
+						mutationType = eventMutation
+						mutationLabel.Text = eventMutation
 					else
-						mutationLabel.Text = ""
+						-- Normal mutation chances (5% gold, 2% diamond, 0.5% emerald)
+						local rand = math.random()
+						if rand < 0.005 then
+							mutationType = "Emerald"
+							mutationLabel.Text = "Emerald"
+						elseif rand < 0.025 then
+							mutationType = "Diamond"
+							mutationLabel.Text = "Diamond"
+						elseif rand < 0.075 then
+							mutationType = "Gold"
+							mutationLabel.Text = "Gold"
+						else
+							mutationLabel.Text = ""
+						end
 					end
 
 					-- Set mutation attribute and apply effects

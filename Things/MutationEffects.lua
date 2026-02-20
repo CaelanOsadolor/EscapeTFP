@@ -23,6 +23,18 @@ local MUTATION_STYLES = {
 		TextColor = Color3.fromRGB(185, 242, 255),
 		Material = Enum.Material.SmoothPlastic,
 		Reflectance = 0.5
+	},
+	["Night"] = {
+		Color = Color3.fromRGB(50, 50, 100), -- Dark blue
+		TextColor = Color3.fromRGB(100, 100, 255), -- Lighter blue for text
+		Material = Enum.Material.SmoothPlastic,
+		Reflectance = 0.2
+	},
+	["Love"] = {
+		Color = Color3.fromRGB(255, 100, 200), -- Pink
+		TextColor = Color3.fromRGB(255, 100, 200),
+		Material = Enum.Material.SmoothPlastic,
+		Reflectance = 0.3
 	}
 }
 
@@ -54,7 +66,7 @@ function MutationEffects.ApplyEffects(thing)
 					skipColoring = true
 				end
 			end
-			
+
 			-- Also skip Parts that have SpecialMesh children with textures/meshes
 			if not skipColoring then
 				local specialMesh = descendant:FindFirstChildOfClass("SpecialMesh")
@@ -116,8 +128,29 @@ function MutationEffects.ApplyEffects(thing)
 		particleEmitter.Rotation = NumberRange.new(0, 360)
 		particleEmitter.RotSpeed = NumberRange.new(-100, 100)
 
-		-- Sparkle texture
-		particleEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+		-- Special texture for Love mutation (hearts), otherwise sparkles
+		if mutation == "Love" then
+			-- Heart particles for Love mutation
+			particleEmitter.Texture = "rbxassetid://15256774849"
+			particleEmitter.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.4),
+				NumberSequenceKeypoint.new(0.5, 0.6),
+				NumberSequenceKeypoint.new(1, 0.3)
+			})
+			particleEmitter.Rate = 15
+			particleEmitter.Lifetime = NumberRange.new(1.5, 2.5)
+			particleEmitter.Speed = NumberRange.new(0.3, 1)
+			particleEmitter.SpreadAngle = Vector2.new(180, 180)
+			particleEmitter.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.3),
+				NumberSequenceKeypoint.new(0.8, 0.5),
+				NumberSequenceKeypoint.new(1, 1)
+			})
+		else
+			-- Sparkle texture for other mutations
+			particleEmitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+		end
+
 		particleEmitter.LightEmission = 1
 		particleEmitter.LightInfluence = 0
 	end

@@ -9,16 +9,26 @@ local collectionService = game:GetService("CollectionService")
 
 local TICK_SOUND = script.sounds.tick
 local END_TICK_SOUND = script.sounds.tick2
-local playerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui", 10)
-local dialogGui = playerGui:FindFirstChild("dialog")
+local playerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui", 30)
+
+-- Wait for dialog GUI to replicate (important for published games)
+local dialogGui = playerGui:WaitForChild("dialog", 10)
 if not dialogGui then
+	warn("[DialogModule] Dialog GUI not found after waiting, checking StarterGui...")
 	local starterDialog = game:GetService("StarterGui"):FindFirstChild("dialog")
 	if starterDialog then
 		dialogGui = starterDialog:Clone()
 		dialogGui.Parent = playerGui
+		task.wait(0.1) -- Give it a moment to parent
+	else
+		error("[DialogModule] CRITICAL: Dialog GUI not found in PlayerGui or StarterGui!")
 	end
 end
-local DIALOG_RESPONSES_UI = dialogGui and dialogGui:FindFirstChild("dialogResponses")
+
+local DIALOG_RESPONSES_UI = dialogGui:WaitForChild("dialogResponses", 5)
+if not DIALOG_RESPONSES_UI then
+	error("[DialogModule] CRITICAL: dialogResponses not found in dialog GUI!")
+end
 
 -- Constructor
 function DialogModule.new(npcName, npc, prompt, animation)
@@ -34,7 +44,8 @@ function DialogModule.new(npcName, npc, prompt, animation)
 	self.prompt = prompt
 	
 	if DIALOG_RESPONSES_UI then
-		local template = DIALOG_RESPONSES_UI:FindFirstChild("template")
+		-- Wait for template to exist (important for published games)
+		local template = DIALOG_RESPONSES_UI:WaitForChild("template", 5)
 		if template then
 			for i = 1,9 do
 				local newResponseButton = template:Clone()
@@ -42,6 +53,8 @@ function DialogModule.new(npcName, npc, prompt, animation)
 				newResponseButton.Name = i
 			end
 			template:Destroy()
+		else
+			error("[DialogModule] Template not found in dialogResponses - cannot create response buttons!")
 		end
 	end
 	
@@ -147,34 +160,50 @@ function DialogModule:triggerDialog(player, questionNumber)
 
 		-- Show responses
 		if not DIALOG_RESPONSES_UI then
-			warn("Dialog UI not found")
+			warn("[DialogModule] Dialog responses UI not found!")
+			return
+		end
+		
+		if not dialog.responses or #dialog.responses == 0 then
+			warn("[DialogModule] No responses provided for this dialog!")
 			return
 		end
 		
 		local uiResponses = DIALOG_RESPONSES_UI
 		local responseNum = nil
 		for i, response in ipairs(dialog.responses) do
-			local option = uiResponses[i] 
-			option.text.Text = "<font color='rgb(255,220,127)'>" .. i .. ".)</font> [''" .. response .. "'']"
+			local option = uiResponses:FindFirstChild(tostring(i))
+			if not option then
+				warn("[DialogModule] Response button", i, "not found - skipping")
+				continue
+			end
+			
+			local textLabel = option:FindFirstChild("text")
+			if not textLabel then
+				warn("[DialogModule] Text label not found in response button", i, "- skipping")
+				continue
+			end
+			
+			textLabel.Text = "<font color='rgb(255,220,127)'>" .. i .. ".)</font> [''" .. response .. "'']"
 			
 			-- calculate x size
 			local plaintext = i..".) [''"..response:gsub("%b<>", "").."'']"
 			
 			option.Size = UDim2.fromScale(option.Size.X.Scale,.4)
 			
-			option.text.Position = UDim2.new(0.02,0,0.5,0)
+			textLabel.Position = UDim2.new(0.02,0,0.5,0)
 			option.Visible = true
 			tweenService:Create(option,TweenInfo.new(0.1,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Size = UDim2.new(option.Size.X.Scale,0,0.35,0)}):Play()
 
 			local enterCon = option.MouseEnter:Connect(function()
 				tweenService:Create(option,TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Size = UDim2.new(option.Size.X.Scale + (option.Size.X.Scale * .05), 0,0.4,0)}):Play()
-				tweenService:Create(option.text,TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Position = UDim2.new(0.06,0,0.5,0)}):Play()
+				tweenService:Create(textLabel,TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Position = UDim2.new(0.06,0,0.5,0)}):Play()
 				END_TICK_SOUND:Play()
 			end)
 
 			local leaveCon = option.MouseLeave:Connect(function()
 				tweenService:Create(option,TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Size = UDim2.new(option.Size.X.Scale, 0,0.35,0)}):Play()
-				tweenService:Create(option.text,TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Position = UDim2.new(0.02,0,0.5,0)}):Play()
+				tweenService:Create(textLabel,TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Position = UDim2.new(0.02,0,0.5,0)}):Play()
 			end)
 
 			local chooseCon = option.MouseButton1Down:Connect(function() -- Return response

@@ -4,6 +4,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 local Workspace = game:GetService("Workspace")
 
 local ThingSpawner = {}
@@ -220,18 +221,18 @@ function ThingSpawner.SpawnLoopForRarity(rarity, config)
 	-- Special handling for Celestial with timer updates
 	if rarity == "Celestial" then
 		-- Get or create BindableEvent for timer updates
-		local bindableEventsFolder = ReplicatedStorage:FindFirstChild("BindableEvents")
-		if not bindableEventsFolder then
-			bindableEventsFolder = Instance.new("Folder")
-			bindableEventsFolder.Name = "BindableEvents"
-			bindableEventsFolder.Parent = ReplicatedStorage
+		local remoteEventsFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
+		if not remoteEventsFolder then
+			remoteEventsFolder = Instance.new("Folder")
+			remoteEventsFolder.Name = "RemoteEvents"
+			remoteEventsFolder.Parent = ReplicatedStorage
 		end
 
-		local celestialTimerBindable = bindableEventsFolder:FindFirstChild("CelestialTimerUpdate")
+		local celestialTimerBindable = remoteEventsFolder:FindFirstChild("CelestialTimerUpdate")
 		if not celestialTimerBindable then
 			celestialTimerBindable = Instance.new("BindableEvent")
 			celestialTimerBindable.Name = "CelestialTimerUpdate"
-			celestialTimerBindable.Parent = bindableEventsFolder
+			celestialTimerBindable.Parent = remoteEventsFolder
 		end
 
 		-- Main loop - timer is the source of truth
@@ -520,22 +521,43 @@ function ThingSpawner.SpawnSpecificThing(thingName, rarity)
 					rateLabel.Text = formatted
 				end
 
-				-- Randomly assign mutation (5% gold, 2% diamond, 0.5% emerald)
+				-- Assign mutation (check for event mutations first, then random mutations)
 				local mutationLabel = frame:FindFirstChild("Mutation")
 				local mutationType = ""
 				if mutationLabel and mutationLabel:IsA("TextLabel") then
-					local rand = math.random()
-					if rand < 0.005 then
-						mutationType = "Emerald"
-						mutationLabel.Text = "Emerald"
-					elseif rand < 0.025 then
-						mutationType = "Diamond"
-						mutationLabel.Text = "Diamond"
-					elseif rand < 0.075 then
-						mutationType = "Gold"
-						mutationLabel.Text = "Gold"
-					else
-						mutationLabel.Text = ""
+					-- Check if there's an active event (Night or Love)
+					local EventManager = require(ServerScriptService.GameManager.EventManager)
+					local activeEvent = EventManager.GetActiveEvent()
+					
+					if activeEvent then
+						-- During events: 5% chance for event-specific mutation
+						local eventRand = math.random()
+						if eventRand < 0.05 then
+							if activeEvent.Type == "Night" then
+								mutationType = "Night"
+								mutationLabel.Text = "Night"
+							elseif activeEvent.Type == "Love" then
+								mutationType = "Love"
+								mutationLabel.Text = "Love"
+							end
+						end
+					end
+					
+					-- If no event mutation, check for regular mutations (gold/diamond/emerald)
+					if mutationType == "" then
+						local rand = math.random()
+						if rand < 0.005 then
+							mutationType = "Emerald"
+							mutationLabel.Text = "Emerald"
+						elseif rand < 0.025 then
+							mutationType = "Diamond"
+							mutationLabel.Text = "Diamond"
+						elseif rand < 0.075 then
+							mutationType = "Gold"
+							mutationLabel.Text = "Gold"
+						else
+							mutationLabel.Text = ""
+						end
 					end
 
 					-- Set mutation attribute and apply effects

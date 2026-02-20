@@ -273,6 +273,10 @@ function ThingValueManager.GetThingValue(thing)
 		mutationMultiplier = 2
 	elseif mutation == "Emerald" then
 		mutationMultiplier = 3
+	elseif mutation == "Night" then
+		mutationMultiplier = 2
+	elseif mutation == "Love" then
+		mutationMultiplier = 3
 	end
 
 	local valueWithMutation = baseValue * mutationMultiplier
